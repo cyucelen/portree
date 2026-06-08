@@ -20,10 +20,11 @@ type Config struct {
 
 // ServiceConfig defines a single service within a worktree.
 type ServiceConfig struct {
-	Command   string    `toml:"command"`
-	Dir       string    `toml:"dir"`
-	PortRange PortRange `toml:"port_range"`
-	ProxyPort int       `toml:"proxy_port"`
+	Command   string            `toml:"command"`
+	Dir       string            `toml:"dir"`
+	PortRange PortRange         `toml:"port_range"`
+	ProxyPort int               `toml:"proxy_port"`
+	Env       map[string]string `toml:"env,omitempty"`
 }
 
 // PortRange defines the range of ports available for allocation.
@@ -212,11 +213,16 @@ func (c *Config) CommandForBranch(service, branch string) string {
 }
 
 // EnvForBranch returns merged environment variables for a given service and branch.
-// Priority: worktree service env > global env
+// Priority (low -> high): top-level [env] -> [services.<svc>].env -> [worktrees.<branch>].services.<svc>.env
 func (c *Config) EnvForBranch(service, branch string) map[string]string {
 	merged := make(map[string]string, len(c.Env))
 	for k, v := range c.Env {
 		merged[k] = v
+	}
+	if svc, ok := c.Services[service]; ok {
+		for k, v := range svc.Env {
+			merged[k] = v
+		}
 	}
 	if wt, ok := c.Worktrees[branch]; ok {
 		if svc, ok := wt.Services[service]; ok {

@@ -212,35 +212,55 @@ func IsPortAvailable(port int) bool {
 func (r *Runner) buildEnv() []string {
 	env := os.Environ()
 
-	// Add global and worktree-override env vars.
+	// Build a lookup of the auto-injected portree vars first so config env
+	// values can interpolate against them (e.g. "${PT_API_URL}").
+	scheme := r.config.ProxyScheme
+	if scheme == "" {
+		scheme = "http"
+	}
+	injected := map[string]string{
+		"PORT":           fmt.Sprintf("%d", r.config.Port),
+		"PT_BRANCH":      r.config.Branch,
+		"PT_BRANCH_SLUG": r.config.BranchSlug,
+		"PT_SERVICE":     r.config.ServiceName,
+	}
+	for svcName, svcPort := range r.config.AllServicePorts {
+		injected["PT_"+strings.ToUpper(svcName)+"_PORT"] = fmt.Sprintf("%d", svcPort)
+	}
+	for svcName, proxyPort := range r.config.AllServiceProxyPorts {
+		injected["PT_"+strings.ToUpper(svcName)+"_URL"] = fmt.Sprintf("%s://%s.localhost:%d", scheme, r.config.BranchSlug, proxyPort)
+	}
+
+	// Expand config env values against the injected vars, falling back to the
+	// process environment so $HOME and similar still resolve.
+	expand := func(name string) string {
+		if v, ok := injected[name]; ok {
+			return v
+		}
+		return os.Getenv(name)
+	}
+
+	// Add global and worktree-override env vars (interpolated).
 	for k, v := range r.config.Env {
 		if strings.ContainsRune(k, 0) || strings.ContainsRune(v, 0) {
 			logging.Warn("skipping env var %q: contains null byte", k)
 			continue
 		}
-		env = append(env, k+"="+v)
+		env = append(env, k+"="+os.Expand(v, expand))
 	}
 
-	// Add portree auto-injected vars.
+	// Add portree auto-injected vars last so built-ins remain authoritative.
 	env = append(env,
 		fmt.Sprintf("PORT=%d", r.config.Port),
 		fmt.Sprintf("PT_BRANCH=%s", r.config.Branch),
 		fmt.Sprintf("PT_BRANCH_SLUG=%s", r.config.BranchSlug),
 		fmt.Sprintf("PT_SERVICE=%s", r.config.ServiceName),
 	)
-
-	// Add cross-service port and URL vars.
 	for svcName, svcPort := range r.config.AllServicePorts {
-		upper := strings.ToUpper(svcName)
-		env = append(env, fmt.Sprintf("PT_%s_PORT=%d", upper, svcPort))
-	}
-	scheme := r.config.ProxyScheme
-	if scheme == "" {
-		scheme = "http"
+		env = append(env, fmt.Sprintf("PT_%s_PORT=%d", strings.ToUpper(svcName), svcPort))
 	}
 	for svcName, proxyPort := range r.config.AllServiceProxyPorts {
-		upper := strings.ToUpper(svcName)
-		env = append(env, fmt.Sprintf("PT_%s_URL=%s://%s.localhost:%d", upper, scheme, r.config.BranchSlug, proxyPort))
+		env = append(env, fmt.Sprintf("PT_%s_URL=%s://%s.localhost:%d", strings.ToUpper(svcName), scheme, r.config.BranchSlug, proxyPort))
 	}
 
 	return env

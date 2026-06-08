@@ -158,7 +158,10 @@ func TestCommandForBranch(t *testing.T) {
 func TestEnvForBranch(t *testing.T) {
 	cfg := &Config{
 		Services: map[string]ServiceConfig{
-			"web": {Command: "npm start"},
+			"web": {
+				Command: "npm start",
+				Env:     map[string]string{"DEBUG": "service", "SVC_ONLY": "yes"},
+			},
 		},
 		Env: map[string]string{
 			"NODE_ENV": "development",
@@ -173,26 +176,35 @@ func TestEnvForBranch(t *testing.T) {
 		},
 	}
 
-	t.Run("global only", func(t *testing.T) {
+	t.Run("global and service env (no worktree)", func(t *testing.T) {
 		env := cfg.EnvForBranch("web", "main")
 		if env["NODE_ENV"] != "development" {
 			t.Errorf("expected NODE_ENV=development, got %q", env["NODE_ENV"])
 		}
-		if env["DEBUG"] != "false" {
-			t.Errorf("expected DEBUG=false, got %q", env["DEBUG"])
+		// service env overrides top-level [env]
+		if env["DEBUG"] != "service" {
+			t.Errorf("expected DEBUG=service (service overrides global), got %q", env["DEBUG"])
+		}
+		if env["SVC_ONLY"] != "yes" {
+			t.Errorf("expected SVC_ONLY=yes, got %q", env["SVC_ONLY"])
 		}
 	})
 
-	t.Run("merge with override", func(t *testing.T) {
+	t.Run("merge priority global < service < worktree", func(t *testing.T) {
 		env := cfg.EnvForBranch("web", "feature/auth")
 		if env["NODE_ENV"] != "development" {
 			t.Errorf("expected NODE_ENV=development, got %q", env["NODE_ENV"])
 		}
+		// worktree override wins over service and global
 		if env["DEBUG"] != "true" {
-			t.Errorf("expected DEBUG=true (overridden), got %q", env["DEBUG"])
+			t.Errorf("expected DEBUG=true (worktree overrides), got %q", env["DEBUG"])
 		}
 		if env["AUTH"] != "1" {
 			t.Errorf("expected AUTH=1, got %q", env["AUTH"])
+		}
+		// service-only env still present
+		if env["SVC_ONLY"] != "yes" {
+			t.Errorf("expected SVC_ONLY=yes, got %q", env["SVC_ONLY"])
 		}
 	})
 
@@ -321,6 +333,31 @@ proxy_port = 3000
 		}
 		if cfg.Services["web"].Command != "npm start" {
 			t.Errorf("loaded command = %q, want %q", cfg.Services["web"].Command, "npm start")
+		}
+	})
+
+	t.Run("parses service env", func(t *testing.T) {
+		dir := t.TempDir()
+		tomlContent := `
+[services.web]
+command = "npm start"
+port_range = { min = 3100, max = 3199 }
+proxy_port = 3000
+env = { API_URL = "${PT_API_URL}", NODE_ENV = "development" }
+`
+		if err := os.WriteFile(filepath.Join(dir, FileName), []byte(tomlContent), 0644); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := Load(dir)
+		if err != nil {
+			t.Fatalf("Load() error: %v", err)
+		}
+		svc := cfg.Services["web"]
+		if svc.Env["API_URL"] != "${PT_API_URL}" {
+			t.Errorf("service env API_URL = %q, want %q", svc.Env["API_URL"], "${PT_API_URL}")
+		}
+		if svc.Env["NODE_ENV"] != "development" {
+			t.Errorf("service env NODE_ENV = %q, want %q", svc.Env["NODE_ENV"], "development")
 		}
 	})
 
