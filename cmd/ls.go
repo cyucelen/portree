@@ -47,7 +47,7 @@ Use --json to output the result as a JSON array for scripting and automation.`,
 		}
 
 		// Load state for runtime info.
-		stateDir := filepath.Join(repoRoot, ".portree")
+		stateDir := filepath.Join(stateRoot, ".portree")
 		store, err := state.NewFileStore(stateDir)
 		if err != nil {
 			return fmt.Errorf("creating state store: %w", err)

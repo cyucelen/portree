@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -332,6 +333,79 @@ func TestMainWorktreeRoot_FromWorktree(t *testing.T) {
 	gotAbs, _ := filepath.EvalSymlinks(root)
 	if gotAbs != wantAbs {
 		t.Errorf("MainWorktreeRoot() from worktree = %q, want %q", gotAbs, wantAbs)
+	}
+}
+
+// TestTwoRootSplit_FromWorktree verifies the split that fixes shared state:
+// from inside a linked worktree, the .portree state dir must resolve to the
+// MAIN worktree root (shared across worktrees), while config loading and a
+// service's working directory must stay anchored to the CURRENT worktree.
+func TestTwoRootSplit_FromWorktree(t *testing.T) {
+	mainDir := initTestRepo(t)
+	mainDir, _ = filepath.EvalSymlinks(mainDir)
+
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = mainDir
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=test",
+			"GIT_AUTHOR_EMAIL=test@test.com",
+			"GIT_COMMITTER_NAME=test",
+			"GIT_COMMITTER_EMAIL=test@test.com",
+		)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+
+	wtDir := filepath.Join(t.TempDir(), "feature-auth")
+	runGit("worktree", "add", "-b", "feature/auth", wtDir)
+	wtDir, _ = filepath.EvalSymlinks(wtDir)
+
+	// (a) State dir resolves to the MAIN worktree root, not the linked one.
+	stateRoot, err := MainWorktreeRoot(wtDir)
+	if err != nil {
+		t.Fatalf("MainWorktreeRoot() error: %v", err)
+	}
+	stateRoot, _ = filepath.EvalSymlinks(stateRoot)
+	if stateRoot != mainDir {
+		t.Errorf("state root = %q, want main worktree %q", stateRoot, mainDir)
+	}
+	wantStateDir := filepath.Join(mainDir, ".portree")
+	if got := filepath.Join(stateRoot, ".portree"); got != wantStateDir {
+		t.Errorf("state dir = %q, want %q", got, wantStateDir)
+	}
+
+	// (b) Config/exec root stays anchored to the CURRENT (linked) worktree.
+	repoRoot, err := FindRepoRoot(wtDir)
+	if err != nil {
+		t.Fatalf("FindRepoRoot() error: %v", err)
+	}
+	repoRoot, _ = filepath.EvalSymlinks(repoRoot)
+	if repoRoot != wtDir {
+		t.Errorf("repo root = %q, want current worktree %q", repoRoot, wtDir)
+	}
+
+	// A service's working dir is built from the current worktree path
+	// (tree.Path + svc.Dir); it must land under the linked worktree, not main.
+	tree, err := CurrentWorktree(wtDir)
+	if err != nil {
+		t.Fatalf("CurrentWorktree() error: %v", err)
+	}
+	treePath, _ := filepath.EvalSymlinks(tree.Path)
+	serviceDir := filepath.Join(treePath, "web")
+	if !strings.HasPrefix(serviceDir, wtDir+string(filepath.Separator)) {
+		t.Errorf("service dir %q should resolve under current worktree %q", serviceDir, wtDir)
+	}
+	if strings.HasPrefix(serviceDir, mainDir+string(filepath.Separator)) {
+		t.Errorf("service dir %q must NOT resolve under main worktree %q", serviceDir, mainDir)
+	}
+
+	// The two roots must genuinely differ for a linked worktree.
+	if stateRoot == repoRoot {
+		t.Errorf("state root and repo root should differ from a linked worktree; both = %q", stateRoot)
 	}
 }
 

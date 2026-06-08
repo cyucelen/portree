@@ -51,7 +51,7 @@ Use --service to specify a different service.`,
 
 		// Determine scheme from proxy state.
 		scheme := "http"
-		stateDir := filepath.Join(repoRoot, ".portree")
+		stateDir := filepath.Join(stateRoot, ".portree")
 		if store, err := state.NewFileStore(stateDir); err == nil {
 			if err := store.WithLock(func() error {
 				st, e := store.Load()
