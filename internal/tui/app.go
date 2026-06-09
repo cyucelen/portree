@@ -391,8 +391,7 @@ func (m *Model) viewLogs() tea.Msg {
 		return ActionResultMsg{Message: "No service selected"}
 	}
 
-	logPath := filepath.Join(m.store.Dir(), "logs",
-		fmt.Sprintf("%s.%s.log", row.Slug, row.Service))
+	logPath := process.LogPath(m.store.Dir(), row.Slug, row.Service)
 
 	if _, err := os.Stat(logPath); os.IsNotExist(err) {
 		return ActionResultMsg{Message: "No log file found"}

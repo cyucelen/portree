@@ -62,7 +62,7 @@ func (r *Runner) Start() (int, error) {
 		return 0, fmt.Errorf("creating log dir: %w", err)
 	}
 
-	logPath := filepath.Join(r.config.LogDir, fmt.Sprintf("%s.%s.log", r.config.BranchSlug, r.config.ServiceName))
+	logPath := filepath.Join(r.config.LogDir, LogFileName(r.config.BranchSlug, r.config.ServiceName))
 	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		return 0, fmt.Errorf("opening log file: %w", err)
