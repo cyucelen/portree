@@ -96,6 +96,9 @@ func resetRootCmd() {
 	upAll = false
 	upService = ""
 	openService = ""
+	logsFollow = false
+	logsTail = 50
+	logsService = ""
 
 	// Reset proxy start flags.
 	proxyStartCmd.Flags().VisitAll(func(f *pflag.Flag) {
