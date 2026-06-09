@@ -63,7 +63,7 @@ Use --follow/-f to keep streaming new output until Ctrl-C.`,
 			}
 		}
 
-		stateDir := filepath.Join(repoRoot, ".portree")
+		stateDir := filepath.Join(stateRoot, ".portree")
 		store, err := state.NewFileStore(stateDir)
 		if err != nil {
 			return fmt.Errorf("creating state store: %w", err)
