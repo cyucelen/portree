@@ -76,7 +76,7 @@ nfpms:
 
 release:
   github:
-    owner: fairy-pitta
+    owner: cyucelen
     name: portree
   draft: false
   prerelease: auto
