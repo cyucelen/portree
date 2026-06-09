@@ -21,7 +21,7 @@ Key bindings:
   l           View logs
   q           Quit dashboard`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return tui.Run(cfg, repoRoot)
+		return tui.Run(cfg, repoRoot, stateRoot)
 	},
 }
 

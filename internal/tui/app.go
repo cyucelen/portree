@@ -45,8 +45,12 @@ type Model struct {
 }
 
 // NewModel creates a new dashboard model.
-func NewModel(cfg *config.Config, repoRoot string) (*Model, error) {
-	stateDir := filepath.Join(repoRoot, ".portree")
+//
+// repoRoot is the current worktree root (used as the per-worktree path
+// fallback); stateRoot is the main worktree root, under which the shared
+// .portree state directory lives.
+func NewModel(cfg *config.Config, repoRoot, stateRoot string) (*Model, error) {
+	stateDir := filepath.Join(stateRoot, ".portree")
 	store, err := state.NewFileStore(stateDir)
 	if err != nil {
 		return nil, err
@@ -412,8 +416,8 @@ func (m *Model) worktreePath(branch string) string {
 }
 
 // Run launches the Bubble Tea program.
-func Run(cfg *config.Config, repoRoot string) error {
-	model, err := NewModel(cfg, repoRoot)
+func Run(cfg *config.Config, repoRoot, stateRoot string) error {
+	model, err := NewModel(cfg, repoRoot, stateRoot)
 	if err != nil {
 		return err
 	}
