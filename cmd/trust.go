@@ -22,7 +22,7 @@ On Linux, this copies the certificate to /usr/local/share/ca-certificates/ and r
 This command requires sudo/root privileges.
 Run 'portree proxy start --https' first to generate the CA certificate.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		caPath := filepath.Join(repoRoot, ".portree", "certs", "ca.crt")
+		caPath := filepath.Join(stateRoot, ".portree", "certs", "ca.crt")
 		if _, err := os.Stat(caPath); os.IsNotExist(err) {
 			return fmt.Errorf("CA certificate not found at %s\nRun 'portree proxy start --https' first to generate certificates", caPath)
 		}

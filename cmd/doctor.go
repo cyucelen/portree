@@ -43,7 +43,8 @@ var doctorCmd = &cobra.Command{
 
 		results = append(results, checkRepo(cwd))
 
-		// Config and state checks require a repo.
+		// Config checks use the current worktree root; state checks use the
+		// main worktree root, where the shared .portree state lives.
 		root, rootErr := git.FindRepoRoot(cwd)
 		if rootErr == nil {
 			results = append(results, checkConfig(root))
@@ -51,8 +52,13 @@ var doctorCmd = &cobra.Command{
 			cfgObj, cfgErr := config.Load(root)
 			if cfgErr == nil {
 				results = append(results, checkPortConflicts(cfgObj)...)
-				results = append(results, checkStaleState(root))
-				results = append(results, checkStaleWorktrees(root, cwd))
+
+				stateRoot, stateErr := git.MainWorktreeRoot(cwd)
+				if stateErr != nil {
+					stateRoot = root
+				}
+				results = append(results, checkStaleState(stateRoot))
+				results = append(results, checkStaleWorktrees(stateRoot, cwd))
 			}
 		}
 
