@@ -107,10 +107,11 @@ func TestBuildEnvInterpolation(t *testing.T) {
 			Port:        3150,
 			Env: map[string]string{
 				"API_URL":   "${PT_API_URL}",
-				"SELF_PORT": "$PORT",
-				"MIXED":     "${PT_API_URL}/v1?port=$PORT",
-				"FROM_HOST": "$PT_TEST_HOME",
+				"SELF_PORT": "${PORT}",
+				"MIXED":     "${PT_API_URL}/v1?port=${PORT}",
+				"FROM_HOST": "${PT_TEST_HOME}",
 				"UNKNOWN":   "${PT_DOES_NOT_EXIST}",
+				"LITERAL":   "p$ssw0rd$PORT",
 			},
 			AllServicePorts: map[string]int{
 				"web": 3150,
@@ -159,6 +160,14 @@ func TestBuildEnvInterpolation(t *testing.T) {
 	t.Run("unknown var expands to empty", func(t *testing.T) {
 		if lookup["UNKNOWN"] != "" {
 			t.Errorf("UNKNOWN = %q, want empty", lookup["UNKNOWN"])
+		}
+	})
+
+	t.Run("bare $ is left literal", func(t *testing.T) {
+		// Only ${VAR} is interpolated; a bare "$" (e.g. in a password) and the
+		// bare "$PORT" form must survive unchanged for backward compatibility.
+		if lookup["LITERAL"] != "p$ssw0rd$PORT" {
+			t.Errorf("LITERAL = %q, want %q", lookup["LITERAL"], "p$ssw0rd$PORT")
 		}
 	})
 

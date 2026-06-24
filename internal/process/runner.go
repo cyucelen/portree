@@ -231,8 +231,11 @@ func (r *Runner) buildEnv() []string {
 		injected["PT_"+strings.ToUpper(svcName)+"_URL"] = fmt.Sprintf("%s://%s.localhost:%d", scheme, r.config.BranchSlug, proxyPort)
 	}
 
-	// Expand config env values against the injected vars, falling back to the
-	// process environment so $HOME and similar still resolve.
+	// Expand ${VAR} references in config env values against the injected vars,
+	// falling back to the process environment so ${HOME} and similar still
+	// resolve. Only the explicit ${...} form is interpolated; a bare "$" is
+	// left literal so existing values such as passwords ("p$ssw0rd") survive
+	// byte-for-byte.
 	expand := func(name string) string {
 		if v, ok := injected[name]; ok {
 			return v
@@ -246,7 +249,7 @@ func (r *Runner) buildEnv() []string {
 			logging.Warn("skipping env var %q: contains null byte", k)
 			continue
 		}
-		env = append(env, k+"="+os.Expand(v, expand))
+		env = append(env, k+"="+expandBraces(v, expand))
 	}
 
 	// Add portree auto-injected vars last so built-ins remain authoritative.
@@ -264,4 +267,29 @@ func (r *Runner) buildEnv() []string {
 	}
 
 	return env
+}
+
+// expandBraces expands ${VAR} references in s using mapping, leaving bare "$"
+// characters untouched. Unlike os.Expand, the bare "$VAR" form is NOT
+// interpreted, so existing config values containing a literal "$" (e.g.
+// passwords like "p$ssw0rd") are preserved exactly. A malformed reference with
+// no closing brace is left as-is.
+func expandBraces(s string, mapping func(string) string) string {
+	if !strings.Contains(s, "${") {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); {
+		if s[i] == '$' && i+1 < len(s) && s[i+1] == '{' {
+			if end := strings.IndexByte(s[i+2:], '}'); end >= 0 {
+				b.WriteString(mapping(s[i+2 : i+2+end]))
+				i += 2 + end + 1
+				continue
+			}
+		}
+		b.WriteByte(s[i])
+		i++
+	}
+	return b.String()
 }
