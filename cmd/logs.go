@@ -63,7 +63,9 @@ Use --follow/-f to keep streaming new output until Ctrl-C.`,
 			}
 		}
 
-		stateDir := filepath.Join(repoRoot, ".portree")
+		// Logs live under the shared state dir (main worktree), not the current
+		// worktree, so a single 'portree logs <branch>' can reach every worktree.
+		stateDir := filepath.Join(stateRoot, ".portree")
 		store, err := state.NewFileStore(stateDir)
 		if err != nil {
 			return fmt.Errorf("creating state store: %w", err)
