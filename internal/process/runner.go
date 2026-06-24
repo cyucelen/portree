@@ -212,36 +212,84 @@ func IsPortAvailable(port int) bool {
 func (r *Runner) buildEnv() []string {
 	env := os.Environ()
 
-	// Add global and worktree-override env vars.
+	// Build a lookup of the auto-injected portree vars first so config env
+	// values can interpolate against them (e.g. "${PT_API_URL}").
+	scheme := r.config.ProxyScheme
+	if scheme == "" {
+		scheme = "http"
+	}
+	injected := map[string]string{
+		"PORT":           fmt.Sprintf("%d", r.config.Port),
+		"PT_BRANCH":      r.config.Branch,
+		"PT_BRANCH_SLUG": r.config.BranchSlug,
+		"PT_SERVICE":     r.config.ServiceName,
+	}
+	for svcName, svcPort := range r.config.AllServicePorts {
+		injected["PT_"+strings.ToUpper(svcName)+"_PORT"] = fmt.Sprintf("%d", svcPort)
+	}
+	for svcName, proxyPort := range r.config.AllServiceProxyPorts {
+		injected["PT_"+strings.ToUpper(svcName)+"_URL"] = fmt.Sprintf("%s://%s.localhost:%d", scheme, r.config.BranchSlug, proxyPort)
+	}
+
+	// Expand ${VAR} references in config env values against the injected vars,
+	// falling back to the process environment so ${HOME} and similar still
+	// resolve. Only the explicit ${...} form is interpolated; a bare "$" is
+	// left literal so existing values such as passwords ("p$ssw0rd") survive
+	// byte-for-byte.
+	expand := func(name string) string {
+		if v, ok := injected[name]; ok {
+			return v
+		}
+		return os.Getenv(name)
+	}
+
+	// Add global and worktree-override env vars (interpolated).
 	for k, v := range r.config.Env {
 		if strings.ContainsRune(k, 0) || strings.ContainsRune(v, 0) {
 			logging.Warn("skipping env var %q: contains null byte", k)
 			continue
 		}
-		env = append(env, k+"="+v)
+		env = append(env, k+"="+expandBraces(v, expand))
 	}
 
-	// Add portree auto-injected vars.
+	// Add portree auto-injected vars last so built-ins remain authoritative.
 	env = append(env,
 		fmt.Sprintf("PORT=%d", r.config.Port),
 		fmt.Sprintf("PT_BRANCH=%s", r.config.Branch),
 		fmt.Sprintf("PT_BRANCH_SLUG=%s", r.config.BranchSlug),
 		fmt.Sprintf("PT_SERVICE=%s", r.config.ServiceName),
 	)
-
-	// Add cross-service port and URL vars.
 	for svcName, svcPort := range r.config.AllServicePorts {
-		upper := strings.ToUpper(svcName)
-		env = append(env, fmt.Sprintf("PT_%s_PORT=%d", upper, svcPort))
-	}
-	scheme := r.config.ProxyScheme
-	if scheme == "" {
-		scheme = "http"
+		env = append(env, fmt.Sprintf("PT_%s_PORT=%d", strings.ToUpper(svcName), svcPort))
 	}
 	for svcName, proxyPort := range r.config.AllServiceProxyPorts {
-		upper := strings.ToUpper(svcName)
-		env = append(env, fmt.Sprintf("PT_%s_URL=%s://%s.localhost:%d", upper, scheme, r.config.BranchSlug, proxyPort))
+		env = append(env, fmt.Sprintf("PT_%s_URL=%s://%s.localhost:%d", strings.ToUpper(svcName), scheme, r.config.BranchSlug, proxyPort))
 	}
 
 	return env
+}
+
+// expandBraces expands ${VAR} references in s using mapping, leaving bare "$"
+// characters untouched. Unlike os.Expand, the bare "$VAR" form is NOT
+// interpreted, so existing config values containing a literal "$" (e.g.
+// passwords like "p$ssw0rd") are preserved exactly. A malformed reference with
+// no closing brace is left as-is.
+func expandBraces(s string, mapping func(string) string) string {
+	if !strings.Contains(s, "${") {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); {
+		if s[i] == '$' && i+1 < len(s) && s[i+1] == '{' {
+			if end := strings.IndexByte(s[i+2:], '}'); end >= 0 {
+				b.WriteString(mapping(s[i+2 : i+2+end]))
+				i += 2 + end + 1
+				continue
+			}
+		}
+		b.WriteByte(s[i])
+		i++
+	}
+	return b.String()
 }

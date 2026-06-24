@@ -95,6 +95,92 @@ func TestBuildEnv(t *testing.T) {
 	})
 }
 
+func TestBuildEnvInterpolation(t *testing.T) {
+	t.Setenv("PT_TEST_HOME", "/home/tester")
+	runner := &Runner{
+		config: RunnerConfig{
+			ServiceName: "web",
+			Branch:      "feature/auth",
+			BranchSlug:  "feature-auth",
+			Command:     "npm start",
+			Dir:         "/tmp/project",
+			Port:        3150,
+			Env: map[string]string{
+				"API_URL":   "${PT_API_URL}",
+				"SELF_PORT": "${PORT}",
+				"MIXED":     "${PT_API_URL}/v1?port=${PORT}",
+				"FROM_HOST": "${PT_TEST_HOME}",
+				"UNKNOWN":   "${PT_DOES_NOT_EXIST}",
+				"LITERAL":   "p$ssw0rd$PORT",
+			},
+			AllServicePorts: map[string]int{
+				"web": 3150,
+				"api": 8150,
+			},
+			AllServiceProxyPorts: map[string]int{
+				"web": 3000,
+				"api": 8000,
+			},
+		},
+	}
+
+	env := runner.buildEnv()
+	lookup := make(map[string]string)
+	for _, e := range env {
+		parts := strings.SplitN(e, "=", 2)
+		if len(parts) == 2 {
+			lookup[parts[0]] = parts[1]
+		}
+	}
+
+	t.Run("expands PT_*_URL", func(t *testing.T) {
+		if lookup["API_URL"] != "http://feature-auth.localhost:8000" {
+			t.Errorf("API_URL = %q, want %q", lookup["API_URL"], "http://feature-auth.localhost:8000")
+		}
+	})
+
+	t.Run("expands PORT", func(t *testing.T) {
+		if lookup["SELF_PORT"] != "3150" {
+			t.Errorf("SELF_PORT = %q, want %q", lookup["SELF_PORT"], "3150")
+		}
+	})
+
+	t.Run("expands mixed value", func(t *testing.T) {
+		if lookup["MIXED"] != "http://feature-auth.localhost:8000/v1?port=3150" {
+			t.Errorf("MIXED = %q, want %q", lookup["MIXED"], "http://feature-auth.localhost:8000/v1?port=3150")
+		}
+	})
+
+	t.Run("falls back to process env", func(t *testing.T) {
+		if lookup["FROM_HOST"] != "/home/tester" {
+			t.Errorf("FROM_HOST = %q, want %q", lookup["FROM_HOST"], "/home/tester")
+		}
+	})
+
+	t.Run("unknown var expands to empty", func(t *testing.T) {
+		if lookup["UNKNOWN"] != "" {
+			t.Errorf("UNKNOWN = %q, want empty", lookup["UNKNOWN"])
+		}
+	})
+
+	t.Run("bare $ is left literal", func(t *testing.T) {
+		// Only ${VAR} is interpolated; a bare "$" (e.g. in a password) and the
+		// bare "$PORT" form must survive unchanged for backward compatibility.
+		if lookup["LITERAL"] != "p$ssw0rd$PORT" {
+			t.Errorf("LITERAL = %q, want %q", lookup["LITERAL"], "p$ssw0rd$PORT")
+		}
+	})
+
+	t.Run("built-ins remain authoritative", func(t *testing.T) {
+		if lookup["PT_API_URL"] != "http://feature-auth.localhost:8000" {
+			t.Errorf("PT_API_URL = %q, want %q", lookup["PT_API_URL"], "http://feature-auth.localhost:8000")
+		}
+		if lookup["PORT"] != "3150" {
+			t.Errorf("PORT = %q, want %q", lookup["PORT"], "3150")
+		}
+	})
+}
+
 func newTestRunner(t *testing.T, command string) *Runner {
 	t.Helper()
 	logDir := t.TempDir()
