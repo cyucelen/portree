@@ -344,24 +344,8 @@ func TestTwoRootSplit_FromWorktree(t *testing.T) {
 	mainDir := initTestRepo(t)
 	mainDir, _ = filepath.EvalSymlinks(mainDir)
 
-	runGit := func(args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Dir = mainDir
-		cmd.Env = append(os.Environ(),
-			"GIT_AUTHOR_NAME=test",
-			"GIT_AUTHOR_EMAIL=test@test.com",
-			"GIT_COMMITTER_NAME=test",
-			"GIT_COMMITTER_EMAIL=test@test.com",
-		)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
-
 	wtDir := filepath.Join(t.TempDir(), "feature-auth")
-	runGit("worktree", "add", "-b", "feature/auth", wtDir)
+	runGitIn(t, mainDir, "worktree", "add", "-b", "feature/auth", wtDir)
 	wtDir, _ = filepath.EvalSymlinks(wtDir)
 
 	// (a) State dir resolves to the MAIN worktree root, not the linked one.
