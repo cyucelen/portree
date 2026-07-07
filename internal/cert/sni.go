@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -30,32 +31,54 @@ const leafValidity = 365 * 24 * time.Hour
 // exactly the hosts portree routes on.
 //
 // The CA cert and key are loaded once; each distinct server name is minted on
-// first use and cached, so repeat handshakes are cheap.
+// first use and cached, so repeat handshakes are cheap. Minting is restricted
+// to the hosts portree routes ("localhost" and "<slug>.localhost"); any other
+// SNI collapses to the loopback leaf, so an untrusted client cannot drive
+// unbounded key generation or cache growth with arbitrary server names.
 func NewSNIGetCertificate(paths CertPaths) (func(*tls.ClientHelloInfo) (*tls.Certificate, error), error) {
 	caCert, caKey, err := loadCA(paths)
 	if err != nil {
 		return nil, err
 	}
 
-	var cache sync.Map // map[string]*tls.Certificate
+	var (
+		mu    sync.RWMutex
+		cache = map[string]*tls.Certificate{}
+	)
 
 	return func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+		// Only mint for hosts portree actually serves. Empty SNI (a client
+		// connecting by IP), or any non-localhost name, falls back to the
+		// loopback leaf so the handshake still completes without minting a
+		// certificate per arbitrary name.
 		name := hello.ServerName
-		if name == "" {
-			// No SNI (e.g. a client connecting by IP): fall back to a
-			// loopback leaf so the handshake still completes.
+		if name != "localhost" && !strings.HasSuffix(name, ".localhost") {
 			name = "localhost"
 		}
 
-		if cached, ok := cache.Load(name); ok {
-			return cached.(*tls.Certificate), nil
+		mu.RLock()
+		leaf, ok := cache[name]
+		mu.RUnlock()
+		if ok {
+			return leaf, nil
 		}
 
 		leaf, err := mintLeaf(name, caCert, caKey)
 		if err != nil {
 			return nil, err
 		}
-		cache.Store(name, leaf)
+
+		// Double-check under the write lock so concurrent handshakes for the
+		// same new host settle on a single cached certificate rather than
+		// minting twice.
+		mu.Lock()
+		if existing, ok := cache[name]; ok {
+			leaf = existing
+		} else {
+			cache[name] = leaf
+		}
+		mu.Unlock()
+
 		return leaf, nil
 	}, nil
 }

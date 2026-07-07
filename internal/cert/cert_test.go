@@ -302,6 +302,33 @@ func TestNewSNIGetCertificate_EmptySNIFallsBack(t *testing.T) {
 	}
 }
 
+func TestNewSNIGetCertificate_NonLocalhostSNIFallsBack(t *testing.T) {
+	dir := t.TempDir()
+	paths, err := EnsureCerts(dir)
+	if err != nil {
+		t.Fatalf("EnsureCerts() error: %v", err)
+	}
+
+	getCert, err := NewSNIGetCertificate(paths)
+	if err != nil {
+		t.Fatalf("NewSNIGetCertificate() error: %v", err)
+	}
+
+	// An untrusted, non-localhost SNI must not mint a certificate for that
+	// name; it collapses to the loopback leaf so arbitrary names cannot drive
+	// unbounded minting.
+	cert, err := getCert(&tls.ClientHelloInfo{ServerName: "attacker.example.com"})
+	if err != nil {
+		t.Fatalf("getCert error: %v", err)
+	}
+	if err := cert.Leaf.VerifyHostname("attacker.example.com"); err == nil {
+		t.Error("certificate should NOT verify a non-localhost SNI host")
+	}
+	if err := cert.Leaf.VerifyHostname("localhost"); err != nil {
+		t.Errorf("fallback certificate should verify localhost: %v", err)
+	}
+}
+
 func TestEnsureCerts_KeyFilePermissions(t *testing.T) {
 	dir := t.TempDir()
 	paths, err := EnsureCerts(dir)
