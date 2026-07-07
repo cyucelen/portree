@@ -49,11 +49,11 @@ changelog:
 
 brews:
   - repository:
-      owner: fairy-pitta
+      owner: cyucelen
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Formula
-    homepage: https://github.com/fairy-pitta/portree
+    homepage: https://github.com/cyucelen/portree
     description: Git Worktree Server Manager
     license: MIT
     install: |
@@ -76,7 +76,7 @@ nfpms:
 
 release:
   github:
-    owner: fairy-pitta
+    owner: cyucelen
     name: portree
   draft: false
   prerelease: auto
